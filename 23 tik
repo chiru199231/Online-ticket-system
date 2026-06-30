@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Live Sync Ticket Board</title>
+    
+    <!-- Real-time Cloud Sync Database (Firebase) Script -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+        }
+
+        body, html {
+            height: 100%;
+            overflow: hidden; /* Strict no scroll rule */
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+
+        .wrapper {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 8px;
+            justify-content: space-between;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1e293b;
+            padding: 6px 10px;
+            border-radius: 6px;
+        }
+
+        h1 { font-size: 0.95rem; color: #38bdf8; }
+
+        .creator-btn {
+            background: #334155;
+            color: #fff;
+            border: 1px solid #475569;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .creator-btn.active {
+            background: #0ea5e9;
+            border-color: #0ea5e9;
+        }
+
+        /* 23 Grid Layout designed completely to prevent any scrolling */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+            flex-grow: 1;
+            margin: 6px 0;
+        }
+
+        .box {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+            text-align: center;
+            padding: 2px;
+            position: relative;
+            color: #94a3b8;
+        }
+
+        /* State: Secret Code Inputted (Revealed Number) */
+        .box.revealed {
+            background: #0f172a;
+            border-color: #38bdf8;
+            color: #38bdf8;
+            font-size: 1.1rem;
+        }
+
+        /* State: Sold Status (Shows ONLY Name) */
+        .box.sold {
+            background: #ef4444;
+            border-color: #ef4444;
+            color: #ffffff;
+            font-size: 0.7rem;
+            word-break: break-word;
+            line-height: 1.1;
+        }
+
+        .box .lbl {
+            font-size: 0.55rem;
+            text-transform: uppercase;
+            opacity: 0.8;
+            margin-top: 1px;
+        }
+
+        footer {
+            text-align: center;
+            font-size: 0.65rem;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="wrapper">
+        <header>
+            <h1 id="title-display">Ticket Dashboard</h1>
+            <button class="creator-btn" id="creator-toggle" onclick="toggleCreatorMode()">Creator Mode</button>
+        </header>
+
+        <!-- Dynamic Grid containing exactly 23 tickets -->
+        <div class="grid" id="ticket-grid"></div>
+
+        <footer>
+            Live Cloud Sync Active • 23 Slots
+        </footer>
+    </div>
+
+    <script>
+        // CONFIGURATION
+        const TOTAL_TICKETS = 23;
+        const VIEW_CODE = "1234";     // Code buyers must input to temporarily see a hidden slot number
+        const CREATOR_CODE = "9999";  // Code YOU input to access Creator settings
+
+        let isCreatorMode = false;
+        let revealedTickets = {}; // Local memory for numbers unlocked via code
+
+        // Free global public cloud database configuration (Firebase Sandbox setup)
+        const firebaseConfig = {
+            databaseURL: "https://ticket-sync-default-rtdb.firebaseio.com/"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database().ref("shared_tickets_board");
+
+        // UI Target
+        const grid = document.getElementById('ticket-grid');
+
+        // Draw and update your board elements
+        function drawBoard(snapshotData) {
+            const data = snapshotData || {};
+            grid.innerHTML = '';
+
+            for (let i = 1; i <= TOTAL_TICKETS; i++) {
+                const item = data[i] || { status: 'hidden', name: '', actualNum: i };
+                
+                const box = document.createElement('div');
+                box.className = 'box';
+
+                if (item.status === 'sold') {
+                    box.className = 'box sold';
+                    box.innerHTML = `<div>${item.name}</div><div class="lbl">SOLD</div>`;
+                } else if (revealedTickets[i]) {
+                    box.className = 'box revealed';
+                    box.innerHTML = `<div>#${i}</div><div class="lbl">Unlocked</div>`;
+                } else {
+                    box.innerHTML = `<div>?</div><div class="lbl">Hidden</div>`;
+                }
+
+                // Handle interactions
+                box.onclick = () => handleTicketClick(i, item);
+                grid.appendChild(box);
+            }
+        }
+
+        // Action Router
+        function handleTicketClick(id, currentData) {
+            if (isCreatorMode) {
+                // Creator Panel Options
+                let action = prompt("Type 'sold' to sell, 'unsold' to clear, or leave blank to cancel:");
+                if (!action) return;
+                
+                if (action.toLowerCase() === 'sold') {
+                    let buyerName = prompt("Enter buyer name:");
+                    if (buyerName) {
+                        db.child(id).set({ status: 'sold', name: buyerName, actualNum: id });
+                    }
+                } else if (action.toLowerCase() === 'unsold') {
+                    db.child(id).set({ status: 'hidden', name: '', actualNum: id });
+                }
+            } else {
+                // Buyer/Viewer options
+                if (currentData.status === 'sold') {
+                    alert("This ticket has already been sold!");
+                    return;
+                }
+                
+                let codeInput = prompt("Enter the Secret Ticket Code to reveal this number:");
+                if (codeInput === VIEW_CODE) {
+                    revealedTickets[id] = true;
+                    // Trigger redraw locally only for this phone
+                    db.once('value', (snap) => drawBoard(snap.val()));
+                } else if (codeInput !== null) {
+                    alert("Invalid Code!");
+                }
+            }
+        }
+
+        // Toggle admin status
+        function toggleCreatorMode() {
+            if (!isCreatorMode) {
+                let access = prompt("Enter Creator Password:");
+                if (access === CREATOR_CODE) {
+                    isCreatorMode = true;
+                    document.getElementById('creator-toggle').classList.add('active');
+                    document.getElementById('title-display').innerText = "Dashboard (CREATOR)";
+                } else if (access !== null) {
+                    alert("Wrong Creator Password!");
+                }
+            } else {
+                isCreatorMode = false;
+                document.getElementById('creator-toggle').classList.remove('active');
+                document.getElementById('title-display').innerText = "Ticket Dashboard";
+            }
+        }
+
+        // Listen for Realtime Database changes coming from ANY device globally
+        db.on('value', (snapshot) => {
+            drawBoard(snapshot.val());
+        });
+    </script>
+</body>
+</html>
