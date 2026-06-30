@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ticket Manager</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body, html {
+            height: 100%;
+            overflow: hidden; /* Prevents scrolling */
+            background-color: #f4f6f9;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            max-width: 480px; /* Standard mobile width */
+            margin: 0 auto;
+            padding: 10px;
+            justify-content: space-between;
+        }
+
+        header {
+            text-align: center;
+            padding: 5px 0;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            font-size: 1.2rem;
+            color: #333;
+        }
+
+        /* Creator Panel */
+        .admin-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #333;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .toggle-btn {
+            background: #555;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .toggle-btn.active {
+            background: #28a745;
+        }
+
+        /* Fixed Grid Layout - No Scroll */
+        .ticket-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr); /* 4 columns */
+            grid-auto-rows: 1fr; /* Equal row heights */
+            gap: 6px;
+            flex-grow: 1;
+            margin: 10px 0;
+        }
+
+        .ticket {
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+            position: relative;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        /* Sold Status Style */
+        .ticket.sold {
+            background-color: #dc3545;
+            color: white;
+            border-color: #dc3545;
+        }
+
+        .ticket.sold::after {
+            content: 'SOLD';
+            position: absolute;
+            bottom: 2px;
+            font-size: 0.55rem;
+            letter-spacing: 0.5px;
+            opacity: 0.9;
+        }
+
+        /* Creator mode styling */
+        .creator-mode .ticket {
+            cursor: pointer;
+            border-style: dashed;
+        }
+        
+        .creator-mode .ticket:active {
+            transform: scale(0.95);
+        }
+
+        footer {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #777;
+            padding: 2px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Live Ticket Status</h1>
+        </header>
+
+        <div class="admin-panel">
+            <span>Role: <strong id="role-text">Viewer Mobile</strong></span>
+            <button class="toggle-btn" id="role-toggle" onclick="toggleRole()">Switch to Creator</button>
+        </div>
+
+        <div class="ticket-grid" id="ticket-container">
+            </div>
+
+        <footer>
+            <p>Updates instantly across devices</p>
+        </footer>
+    </div>
+
+    <script>
+        const TOTAL_TICKETS = 20; // Perfect count to fit one mobile screen
+        let isCreator = false;
+        
+        // Mock Database State (In a live app, swap localStorage for a Firebase database reference)
+        let ticketStates = JSON.parse(localStorage.getItem('shared_tickets')) || {};
+
+        const container = document.getElementById('ticket-container');
+        const roleToggle = document.getElementById('role-toggle');
+        const roleText = document.getElementById('role-text');
+
+        // Initialize Tickets
+        function renderTickets() {
+            container.innerHTML = '';
+            for (let i = 1; i <= TOTAL_TICKETS; i++) {
+                const ticket = document.createElement('div');
+                ticket.classList.add('ticket');
+                ticket.innerText = i;
+                
+                // Check if already sold
+                if (ticketStates[i] === 'sold') {
+                    ticket.classList.add('sold');
+                }
+
+                // Click event handling
+                ticket.addEventListener('click', () => {
+                    if (isCreator) {
+                        toggleTicketStatus(i);
+                    }
+                });
+
+                container.appendChild(ticket);
+            }
+        }
+
+        // Toggle Creator / Viewer mode
+        function toggleRole() {
+            isCreator = !isCreator;
+            if (isCreator) {
+                roleToggle.innerText = "Exit Creator";
+                roleToggle.classList.add('active');
+                roleText.innerText = "Creator (Tap to Edit)";
+                document.body.classList.add('creator-mode');
+            } else {
+                roleToggle.innerText = "Switch to Creator";
+                roleToggle.classList.add('active');
+                roleToggle.classList.remove('active');
+                roleText.innerText = "Viewer Mobile";
+                document.body.classList.remove('creator-mode');
+            }
+        }
+
+        // Creator functionality to change sold/unsold status
+        function toggleTicketStatus(ticketId) {
+            if (ticketStates[ticketId] === 'sold') {
+                ticketStates[ticketId] = 'available';
+            } else {
+                ticketStates[ticketId] = 'sold';
+            }
+            
+            // Save state
+            localStorage.setItem('shared_tickets', JSON.stringify(ticketStates));
+            renderTickets();
+            
+            // Dispatch a storage event so if you have multiple tabs/browsers open on the same phone, they sync
+            window.dispatchEvent(new Event('storage'));
+        }
+
+        // Listen for changes from other windows/tabs for simulation
+        window.addEventListener('storage', () => {
+            ticketStates = JSON.parse(localStorage.getItem('shared_tickets')) || {};
+            renderTickets();
+        });
+
+        // Initial Build
+        renderTickets();
+    </script>
+</body>
+</html>
